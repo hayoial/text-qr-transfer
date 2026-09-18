@@ -125,6 +125,28 @@ export default {
       max-width: 520px;
     }
 
+    /* 主标题区 */
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+      padding: 0 4px;
+    }
+
+    .app-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+
+    .app-sub {
+      font-size: 12px;
+      color: var(--ink-muted);
+      font-family: var(--mono);
+    }
+
     /* 顶部导航与标签 */
     .top-bar {
       display: flex;
