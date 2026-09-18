@@ -533,7 +533,7 @@ export default {
   }
   applyTheme(getPreferredTheme());
 
-  // 鲁棒获取当前页面的规范入口 URL（移除任何 hash 或额外 query）
+  // 鲁棒获取当前页面的规范入口 URL
   function getRobustCleanUrl() {
     try {
       if (window.location && window.location.origin) {
@@ -563,7 +563,12 @@ export default {
     });
     const label = document.getElementById('entry-url-label');
     if (label) {
-      label.innerText = cleanUrl.replace(/^https?:\/\//, '');
+      try {
+        const u = new URL(cleanUrl);
+        label.innerText = u.host + (u.pathname === '/' ? '' : u.pathname);
+      } catch (err) {
+        label.innerText = cleanUrl;
+      }
     }
     entryQrRendered = true;
   }
@@ -607,7 +612,7 @@ export default {
     const raw = await crypto.subtle.exportKey("raw", key);
     return {
       key,
-      rawStr: btoa(String.fromCharCode(...new Uint8Array(raw))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '')
+      rawStr: btoa(String.fromCharCode(...new Uint8Array(raw))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
     };
   }
 
@@ -617,7 +622,7 @@ export default {
   }
 
   async function restoreKey(str) {
-    let norm = str.replace(/-/g, '+').replace(/_/g, '/');
+    let norm = str.replaceAll('-', '+').replaceAll('_', '/');
     while (norm.length % 4) norm += '=';
     const bytes = Uint8Array.from(atob(norm), c => c.charCodeAt(0));
     return await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
@@ -721,8 +726,8 @@ export default {
 
   // 3. 提取 6 位码对应的内容 (Mac 端执行)
   async function fetchByCode() {
-    const code = document.getElementById('input-code').value.replace(/\\s+/g, '');
-    if (code.length !== 6 || !/^\\d+$/.test(code)) {
+    const code = document.getElementById('input-code').value.replaceAll(' ', '').trim();
+    if (code.length !== 6 || !/^[0-9]+$/.test(code)) {
       return alert('请输入 6 位纯数字提取码');
     }
 
