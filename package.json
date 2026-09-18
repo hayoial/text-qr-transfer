@@ -1,0 +1,13 @@
+{
+  "name": "text-qr-transfer",
+  "version": "1.0.0",
+  "description": "Zero-backend private text to QR transfer tool for Cloudflare Workers",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.134.0"
+  }
+}

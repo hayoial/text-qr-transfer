@@ -1,0 +1,9 @@
+name = "text-qr-transfer"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# Run: npx wrangler kv namespace create TEXT_KV
+# and replace the id below with your own KV namespace ID:
+[[kv_namespaces]]
+binding = "TEXT_KV"
+id = "<YOUR_KV_NAMESPACE_ID>"
