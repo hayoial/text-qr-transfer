@@ -17,7 +17,6 @@ export default {
           return new Response(JSON.stringify({ error: "Payload exceeds size limit" }), { status: 400 });
         }
 
-        // customId 用于 6 位提取码的 Hash 作为 KV 存储键
         const id = customId ? customId : Math.random().toString(36).substring(2, 8);
         await env.TEXT_KV.put(id, cipherText, { expirationTtl: 300 });
 
@@ -326,7 +325,7 @@ export default {
       color: var(--ink-muted);
     }
 
-    /* 接收输入框 */
+    /* 接收输入框与扫码引导 */
     .retrieve-box {
       display: flex;
       gap: 10px;
@@ -358,6 +357,27 @@ export default {
       font-size: 15px;
       background: var(--accent);
       color: #fff;
+    }
+
+    /* 输入码界面的手机直达扫码区 */
+    .phone-entry-guide {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .guide-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .guide-sub {
+      font-size: 12px;
+      color: var(--ink-muted);
+      margin-bottom: 12px;
     }
 
     /* 手机端接收视图 */
@@ -457,11 +477,21 @@ export default {
       <input type="text" class="code-input" id="input-code" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCode()" />
       <button class="btn btn-retrieve" onclick="fetchByCode()">提取文本</button>
     </div>
-    <div class="content-viewport" id="recv-preview" style="min-height: 180px; color: var(--ink-muted);">
+
+    <div class="content-viewport" id="recv-preview" style="min-height: 120px; color: var(--ink-muted);">
       输入手机上显示的 6 位提取码，点击提取即可在本地解密...
     </div>
+
     <div style="margin-top: 14px; text-align: right;">
       <button class="btn btn-subtle" id="btn-copy-retrieved" onclick="copyRetrievedText()" style="display:none;">复制全文</button>
+    </div>
+
+    <!-- 手机扫码入口：自动获取当前鲁棒 URL 生成二维码 -->
+    <div class="phone-entry-guide" id="entry-guide-block">
+      <div class="guide-label">手机尚未打开本网页？</div>
+      <div class="guide-sub">iPhone 扫码直达发送界面，粘贴文本点“生成提取码”</div>
+      <div class="qr-frame" id="entry-qr-target"></div>
+      <div class="qr-caption" id="entry-url-label"></div>
     </div>
   </div>
 
@@ -503,6 +533,41 @@ export default {
   }
   applyTheme(getPreferredTheme());
 
+  // 鲁棒获取当前页面的规范入口 URL（移除任何 hash 或额外 query）
+  function getRobustCleanUrl() {
+    try {
+      if (window.location && window.location.origin) {
+        return window.location.origin + window.location.pathname;
+      }
+    } catch (e) {}
+    try {
+      return window.location.href.split('#')[0].split('?')[0];
+    } catch (e) {}
+    return '/';
+  }
+
+  // 渲染输入码面板底部的“手机扫码直达入口”二维码
+  let entryQrRendered = false;
+  function renderEntryQR() {
+    if (entryQrRendered) return;
+    const target = document.getElementById('entry-qr-target');
+    if (!target) return;
+    target.innerHTML = '';
+    const cleanUrl = getRobustCleanUrl();
+
+    new QRCode(target, {
+      text: cleanUrl,
+      width: 140,
+      height: 140,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    const label = document.getElementById('entry-url-label');
+    if (label) {
+      label.innerText = cleanUrl.replace(/^https?:\/\//, '');
+    }
+    entryQrRendered = true;
+  }
+
   // 标签切换
   function switchTab(tab) {
     const isSend = tab === 'send';
@@ -510,7 +575,10 @@ export default {
     document.getElementById('tab-recv').classList.toggle('active', !isSend);
     document.getElementById('panel-sender').style.display = isSend ? 'block' : 'none';
     document.getElementById('panel-retriever').style.display = isSend ? 'none' : 'block';
-    if (!isSend) document.getElementById('input-code').focus();
+    if (!isSend) {
+      renderEntryQR();
+      document.getElementById('input-code').focus();
+    }
   }
 
   // 字符计数
@@ -594,7 +662,7 @@ export default {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '上传未完成');
 
-      const accessUrl = window.location.origin + '/#i=' + data.id + '&k=' + rawStr;
+      const accessUrl = getRobustCleanUrl() + '#i=' + data.id + '&k=' + rawStr;
       const qrBlock = document.getElementById('qr-block');
       const qrTarget = document.getElementById('qr-target');
       document.getElementById('code-block').style.display = 'none';
@@ -625,13 +693,10 @@ export default {
     btn.innerText = '正在处理...';
 
     try {
-      // 随机生成 6 位纯数字提取码
       const digits = Math.floor(100000 + Math.random() * 900000).toString();
-      // 基于数字提取码派生 AES 密钥
       const key = await deriveKeyFromCode(digits);
       const cipherText = await encryptText(val, key);
 
-      // 云端以 sha256(digits) 作为 KV key（服务器无法反推 6 位数字密钥）
       const storageId = "code_" + (await sha256(digits)).substring(0, 16);
 
       const res = await fetch('/api/store', {
@@ -678,7 +743,6 @@ export default {
       preview.innerText = text;
       counterEl.innerText = text.length + ' 字符';
 
-      // 显示复制按钮，并尝试自动拷贝到 Mac 剪贴板
       const copyBtn = document.getElementById('btn-copy-retrieved');
       copyBtn.style.display = 'inline-flex';
       navigator.clipboard.writeText(text).then(() => {
