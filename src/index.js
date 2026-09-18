@@ -456,6 +456,12 @@ export default {
 <body>
 
 <div class="shell">
+  <!-- 主标题区 -->
+  <div class="app-header">
+    <span class="app-title">文本中继 · Text Relay</span>
+    <span class="app-sub">端到端私密传输</span>
+  </div>
+
   <!-- 顶部导航栏 -->
   <div class="top-bar">
     <div class="tab-group" id="nav-tabs">
