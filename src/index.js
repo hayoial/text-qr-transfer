@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // API: 存储加密密文 (5分钟硬过期)
+    // API: 存储加密密文 (通用: 支持自定义 key 或随机短 ID，5分钟硬过期)
     if (url.pathname === "/api/store" && request.method === "POST") {
       try {
         if (!env.TEXT_KV) {
@@ -12,12 +12,13 @@ export default {
           });
         }
         const body = await request.json();
-        const { cipherText } = body;
+        const { cipherText, customId } = body;
         if (!cipherText || cipherText.length > 5 * 1024 * 1024) {
           return new Response(JSON.stringify({ error: "Payload exceeds size limit" }), { status: 400 });
         }
 
-        const id = Math.random().toString(36).substring(2, 8);
+        // customId 用于 6 位提取码的 Hash 作为 KV 存储键
+        const id = customId ? customId : Math.random().toString(36).substring(2, 8);
         await env.TEXT_KV.put(id, cipherText, { expirationTtl: 300 });
 
         return new Response(JSON.stringify({ id }), {
@@ -58,7 +59,6 @@ export default {
   <title>文本中继 · Text Relay</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
-    /* 默认跟随系统亮色/暗色，或由 data-theme 覆盖 */
     :root {
       --bg: #f8fafc;
       --surface: #ffffff;
@@ -126,7 +126,7 @@ export default {
       max-width: 520px;
     }
 
-    /* 顶部紧凑工具条 */
+    /* 顶部导航与标签 */
     .top-bar {
       display: flex;
       justify-content: space-between;
@@ -135,17 +135,37 @@ export default {
       padding: 0 4px;
     }
 
-    .brand-title {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
+    .tab-group {
+      display: inline-flex;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--ink-muted);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--surface);
       color: var(--ink);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
 
     .top-actions {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     .brand-meta {
@@ -161,7 +181,7 @@ export default {
       color: var(--ink-muted);
       font-family: var(--mono);
       font-size: 11px;
-      padding: 3px 8px;
+      padding: 4px 8px;
       cursor: pointer;
       line-height: 1.4;
       transition: background-color 0.15s ease, color 0.15s ease;
@@ -181,10 +201,9 @@ export default {
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
 
-    /* 输入框 */
     textarea {
       width: 100%;
-      height: 220px;
+      height: 200px;
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -258,7 +277,7 @@ export default {
       color: var(--ink);
     }
 
-    /* 二维码展示区 */
+    /* 二维码区域 */
     .qr-region {
       display: none;
       margin-top: 20px;
@@ -280,6 +299,65 @@ export default {
       font-family: var(--mono);
       font-size: 12px;
       color: var(--ink-muted);
+    }
+
+    /* 6 位提取码卡片 */
+    .code-display-card {
+      display: none;
+      margin-top: 20px;
+      padding: 20px;
+      background: var(--surface-raised);
+      border: 1px dashed var(--border-focus);
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .code-digits {
+      font-family: var(--mono);
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: 8px;
+      color: var(--accent);
+      margin: 10px 0;
+    }
+
+    .code-hint {
+      font-size: 12px;
+      color: var(--ink-muted);
+    }
+
+    /* 接收输入框 */
+    .retrieve-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .code-input {
+      flex: 1;
+      height: 48px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 4px;
+      text-align: center;
+      outline: none;
+    }
+
+    .code-input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn-retrieve {
+      height: 48px;
+      padding: 0 20px;
+      font-size: 15px;
+      background: var(--accent);
+      color: #fff;
     }
 
     /* 手机端接收视图 */
@@ -336,105 +414,108 @@ export default {
 <body>
 
 <div class="shell">
-  <!-- 发送端 -->
-  <div id="view-sender">
-    <div class="top-bar">
-      <span class="brand-title">中继至 iPhone</span>
-      <div class="top-actions">
-        <span class="brand-meta" id="char-counter">0 字符</span>
-        <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()">自动</button>
-      </div>
+  <!-- 顶部导航栏 -->
+  <div class="top-bar">
+    <div class="tab-group" id="nav-tabs">
+      <button class="tab-btn active" id="tab-send" onclick="switchTab('send')">发送文本</button>
+      <button class="tab-btn" id="tab-recv" onclick="switchTab('recv')">输入码提取</button>
     </div>
 
-    <div class="panel">
-      <textarea id="input-payload" placeholder="在此粘贴长文本..."></textarea>
-      
-      <div class="control-row">
-        <button class="btn btn-subtle" onclick="clearInput()">清空</button>
-        <button class="btn btn-action" id="btn-submit" onclick="submitPayload()">生成扫码识别码</button>
-      </div>
-
-      <div class="qr-region" id="qr-block">
-        <div class="qr-frame" id="qr-target"></div>
-        <div class="qr-caption" id="qr-status">低密度短码 · 屏幕扫码已就绪</div>
-      </div>
-    </div>
-
-    <div class="footnote">
-      <span>端到端 AES-256 加密</span>
-      <span>5 分钟后自动销毁</span>
+    <div class="top-actions">
+      <span class="brand-meta" id="status-counter">0 字符</span>
+      <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()">自动</button>
     </div>
   </div>
 
-  <!-- 接收端 -->
-  <div id="view-receiver" class="receiver-deck">
-    <div class="top-bar">
-      <span class="brand-title">文本接收就绪</span>
-      <div class="top-actions">
-        <span class="brand-meta" id="rx-meta">—</span>
-        <button class="theme-toggle" id="theme-btn-rx" onclick="cycleTheme()">自动</button>
-      </div>
+  <!-- 面板 1: 发送端 (支持生成二维码或生成 6 位提取码) -->
+  <div class="panel" id="panel-sender">
+    <textarea id="input-payload" placeholder="粘贴需要发送的长文本..."></textarea>
+    
+    <div class="control-row">
+      <button class="btn btn-subtle" onclick="clearInput()">清空</button>
+      <button class="btn btn-action" id="btn-qr" onclick="submitAsQR()">生成扫码识别码</button>
+      <button class="btn btn-subtle" id="btn-code" onclick="submitAsCode()" title="适合手机发回电脑：生成 6 位提取码">生成提取码</button>
     </div>
 
-    <div class="panel">
-      <button class="btn btn-huge-copy" id="btn-copy" onclick="triggerCopy()">
-        <span id="copy-text">复制全文</span>
-      </button>
-
-      <div class="content-viewport" id="rx-content">正在载入解密...</div>
-
-      <div style="margin-top: 14px; text-align: right;">
-        <button class="btn btn-subtle" style="font-size: 12px;" onclick="location.href='/'">发送新文本</button>
-      </div>
+    <!-- 二维码显示 -->
+    <div class="qr-region" id="qr-block">
+      <div class="qr-frame" id="qr-target"></div>
+      <div class="qr-caption">低密度短码 · 屏幕扫码秒识别</div>
     </div>
 
-    <div class="footnote">
-      <span>云端密文已阅后即焚</span>
-      <span>仅留存当前页面</span>
+    <!-- 6 位提取码显示 -->
+    <div class="code-display-card" id="code-block">
+      <div class="code-hint">在电脑上打开本页并输入以下提取码：</div>
+      <div class="code-digits" id="digit-value">------</div>
+      <div class="code-hint">5 分钟内有效 · 电脑输入后即刻物理销毁</div>
     </div>
+  </div>
+
+  <!-- 面板 2: 输入提取码接收端 (Mac 接收手机发送过来的长文本) -->
+  <div class="panel" id="panel-retriever" style="display:none;">
+    <div class="retrieve-box">
+      <input type="text" class="code-input" id="input-code" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCode()" />
+      <button class="btn btn-retrieve" onclick="fetchByCode()">提取文本</button>
+    </div>
+    <div class="content-viewport" id="recv-preview" style="min-height: 180px; color: var(--ink-muted);">
+      输入手机上显示的 6 位提取码，点击提取即可在本地解密...
+    </div>
+    <div style="margin-top: 14px; text-align: right;">
+      <button class="btn btn-subtle" id="btn-copy-retrieved" onclick="copyRetrievedText()" style="display:none;">复制全文</button>
+    </div>
+  </div>
+
+  <!-- 面板 3: 手机端扫码直达接收视图 (通过二维码 URL 锚点进入) -->
+  <div class="panel receiver-deck" id="panel-receiver">
+    <button class="btn btn-huge-copy" id="btn-copy" onclick="triggerCopy()">
+      <span id="copy-text">复制全文</span>
+    </button>
+    <div class="content-viewport" id="rx-content">正在载入解密...</div>
+    <div style="margin-top: 14px; text-align: right;">
+      <button class="btn btn-subtle" style="font-size: 12px;" onclick="location.href='/'">发送新文本</button>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <span>端到端 AES-256 加密</span>
+    <span>阅后即焚 · 5 分钟硬过期</span>
   </div>
 </div>
 
 <script>
-  // 主题模式控制：auto -> dark -> light -> auto
+  // 主题模式控制
   const THEME_KEY = 'relay_theme_pref';
-  function getPreferredTheme() {
-    return localStorage.getItem(THEME_KEY) || 'auto';
-  }
-
+  function getPreferredTheme() { return localStorage.getItem(THEME_KEY) || 'auto'; }
   function applyTheme(mode) {
     const root = document.documentElement;
-    if (mode === 'auto') {
-      root.removeAttribute('data-theme');
-    } else {
-      root.setAttribute('data-theme', mode);
-    }
+    if (mode === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', mode);
     const label = mode === 'auto' ? '自动' : (mode === 'dark' ? '夜间' : '日间');
-    const b1 = document.getElementById('theme-btn');
-    const b2 = document.getElementById('theme-btn-rx');
-    if (b1) b1.innerText = label;
-    if (b2) b2.innerText = label;
+    const b = document.getElementById('theme-btn');
+    if (b) b.innerText = label;
   }
-
   function cycleTheme() {
     const current = getPreferredTheme();
-    let next = 'dark';
-    if (current === 'auto') next = 'dark';
-    else if (current === 'dark') next = 'light';
-    else next = 'auto';
-
+    let next = current === 'auto' ? 'dark' : (current === 'dark' ? 'light' : 'auto');
     if (next === 'auto') localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, next);
-
     applyTheme(next);
   }
-
-  // 初始化主题
   applyTheme(getPreferredTheme());
 
-  // 字符计数实时更新
+  // 标签切换
+  function switchTab(tab) {
+    const isSend = tab === 'send';
+    document.getElementById('tab-send').classList.toggle('active', isSend);
+    document.getElementById('tab-recv').classList.toggle('active', !isSend);
+    document.getElementById('panel-sender').style.display = isSend ? 'block' : 'none';
+    document.getElementById('panel-retriever').style.display = isSend ? 'none' : 'block';
+    if (!isSend) document.getElementById('input-code').focus();
+  }
+
+  // 字符计数
   const inputEl = document.getElementById('input-payload');
-  const counterEl = document.getElementById('char-counter');
+  const counterEl = document.getElementById('status-counter');
   inputEl.addEventListener('input', () => {
     counterEl.innerText = inputEl.value.length + ' 字符';
   });
@@ -443,10 +524,16 @@ export default {
     inputEl.value = '';
     counterEl.innerText = '0 字符';
     document.getElementById('qr-block').style.display = 'none';
+    document.getElementById('code-block').style.display = 'none';
     inputEl.focus();
   }
 
-  // Web Crypto AES-256-GCM
+  // Web Crypto 原生加解密算法
+  async function sha256(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   async function generateKey() {
     const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
     const raw = await crypto.subtle.exportKey("raw", key);
@@ -456,10 +543,15 @@ export default {
     };
   }
 
+  async function deriveKeyFromCode(code) {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode("TEXT_RELAY_SALT_" + code));
+    return await crypto.subtle.importKey("raw", hash, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  }
+
   async function restoreKey(str) {
-    let normalized = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (normalized.length % 4) normalized += '=';
-    const bytes = Uint8Array.from(atob(normalized), c => c.charCodeAt(0));
+    let norm = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (norm.length % 4) norm += '=';
+    const bytes = Uint8Array.from(atob(norm), c => c.charCodeAt(0));
     return await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
   }
 
@@ -481,11 +573,12 @@ export default {
     return new TextDecoder().decode(decrypted);
   }
 
-  async function submitPayload() {
+  // 1. 方式 A：生成扫码二维码 (Mac -> iPhone)
+  async function submitAsQR() {
     const val = inputEl.value.trim();
     if (!val) return;
 
-    const btn = document.getElementById('btn-submit');
+    const btn = document.getElementById('btn-qr');
     btn.disabled = true;
     btn.innerText = '正在加密...';
 
@@ -499,12 +592,12 @@ export default {
         body: JSON.stringify({ cipherText })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '传输请求未完成');
+      if (!res.ok) throw new Error(data.error || '上传未完成');
 
       const accessUrl = window.location.origin + '/#i=' + data.id + '&k=' + rawStr;
-
       const qrBlock = document.getElementById('qr-block');
       const qrTarget = document.getElementById('qr-target');
+      document.getElementById('code-block').style.display = 'none';
       qrTarget.innerHTML = '';
 
       new QRCode(qrTarget, {
@@ -513,15 +606,98 @@ export default {
         height: 180,
         correctLevel: QRCode.CorrectLevel.M
       });
-
-      document.getElementById('qr-status').innerText = '载荷已加密 · 有效期 5 分钟';
       qrBlock.style.display = 'block';
-    } catch (err) {
-      alert(err.message);
+    } catch (e) {
+      alert(e.message);
     } finally {
       btn.disabled = false;
       btn.innerText = '生成扫码识别码';
     }
+  }
+
+  // 2. 方式 B：生成 6 位提取码 (iPhone -> Mac)
+  async function submitAsCode() {
+    const val = inputEl.value.trim();
+    if (!val) return alert('请先输入长文本');
+
+    const btn = document.getElementById('btn-code');
+    btn.disabled = true;
+    btn.innerText = '正在处理...';
+
+    try {
+      // 随机生成 6 位纯数字提取码
+      const digits = Math.floor(100000 + Math.random() * 900000).toString();
+      // 基于数字提取码派生 AES 密钥
+      const key = await deriveKeyFromCode(digits);
+      const cipherText = await encryptText(val, key);
+
+      // 云端以 sha256(digits) 作为 KV key（服务器无法反推 6 位数字密钥）
+      const storageId = "code_" + (await sha256(digits)).substring(0, 16);
+
+      const res = await fetch('/api/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cipherText, customId: storageId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '上传失败');
+
+      document.getElementById('qr-block').style.display = 'none';
+      const codeBlock = document.getElementById('code-block');
+      document.getElementById('digit-value').innerText = digits.slice(0, 3) + ' ' + digits.slice(3);
+      codeBlock.style.display = 'block';
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = '生成提取码';
+    }
+  }
+
+  // 3. 提取 6 位码对应的内容 (Mac 端执行)
+  async function fetchByCode() {
+    const code = document.getElementById('input-code').value.replace(/\\s+/g, '');
+    if (code.length !== 6 || !/^\\d+$/.test(code)) {
+      return alert('请输入 6 位纯数字提取码');
+    }
+
+    const preview = document.getElementById('recv-preview');
+    preview.style.color = 'var(--ink-muted)';
+    preview.innerText = '正在请求并解密...';
+
+    try {
+      const storageId = "code_" + (await sha256(code)).substring(0, 16);
+      const res = await fetch('/api/get/' + storageId);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '提取失败或已销毁');
+
+      const key = await deriveKeyFromCode(code);
+      const text = await decryptText(data.cipherText, key);
+
+      preview.style.color = 'var(--ink)';
+      preview.innerText = text;
+      counterEl.innerText = text.length + ' 字符';
+
+      // 显示复制按钮，并尝试自动拷贝到 Mac 剪贴板
+      const copyBtn = document.getElementById('btn-copy-retrieved');
+      copyBtn.style.display = 'inline-flex';
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.innerText = '已自动存入剪贴板';
+        setTimeout(() => { copyBtn.innerText = '复制全文'; }, 2000);
+      }).catch(() => {});
+    } catch (e) {
+      preview.style.color = '#ef4444';
+      preview.innerText = '提取失败：' + e.message;
+    }
+  }
+
+  function copyRetrievedText() {
+    const text = document.getElementById('recv-preview').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      const b = document.getElementById('btn-copy-retrieved');
+      b.innerText = '已复制全文';
+      setTimeout(() => { b.innerText = '复制全文'; }, 2000);
+    });
   }
 
   function triggerCopy() {
@@ -539,7 +715,7 @@ export default {
     });
   }
 
-  // 接收端解析
+  // 扫码页面自动加载
   window.addEventListener('DOMContentLoaded', async () => {
     const hash = window.location.hash.substring(1);
     if (!hash) return;
@@ -549,8 +725,9 @@ export default {
     const keyStr = query.get('k');
 
     if (id && keyStr) {
-      document.getElementById('view-sender').style.display = 'none';
-      document.getElementById('view-receiver').style.display = 'block';
+      document.getElementById('nav-tabs').style.display = 'none';
+      document.getElementById('panel-sender').style.display = 'none';
+      document.getElementById('panel-receiver').style.display = 'block';
       const rxContent = document.getElementById('rx-content');
 
       try {
@@ -562,7 +739,7 @@ export default {
         const text = await decryptText(data.cipherText, key);
 
         rxContent.innerText = text;
-        document.getElementById('rx-meta').innerText = text.length + ' 字符';
+        counterEl.innerText = text.length + ' 字符';
       } catch (err) {
         rxContent.innerText = '内容读取失败：' + err.message;
       }
