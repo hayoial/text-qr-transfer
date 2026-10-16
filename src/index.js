@@ -704,25 +704,65 @@ export default {
       pointer-events: none;
     }
 
+    .speed-panel-box {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .speed-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .speed-toggle-debug-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 11px;
+      color: var(--ink-muted);
+      cursor: pointer;
+      padding: 3px 8px;
+      font-family: var(--mono);
+      transition: all 0.15s ease;
+    }
+
+    .speed-toggle-debug-btn:hover, .speed-toggle-debug-btn.active {
+      color: var(--ink);
+      border-color: var(--accent);
+      background: var(--surface);
+    }
+
     .speed-pills {
       display: flex;
       gap: 6px;
-      margin-top: 10px;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: flex-start;
+      flex-wrap: wrap;
       font-size: 12px;
     }
 
     .speed-btn {
-      background: var(--surface-raised);
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 6px;
       color: var(--ink-muted);
       font-family: var(--mono);
       font-size: 11px;
-      padding: 3px 8px;
+      padding: 4px 9px;
       cursor: pointer;
       transition: all 0.15s ease;
+    }
+
+    .speed-btn:hover {
+      border-color: var(--border-focus);
+      color: var(--ink);
     }
 
     .speed-btn.active {
@@ -730,6 +770,80 @@ export default {
       color: #ffffff;
       border-color: var(--accent);
       font-weight: 600;
+    }
+
+    .speed-custom-drawer {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .custom-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .custom-slider-label {
+      font-size: 12px;
+      color: var(--ink-muted);
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    .speed-slider {
+      flex: 1;
+      height: 6px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .custom-speed-badge {
+      display: inline-flex;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .speed-num-input {
+      width: 44px;
+      border: none;
+      background: transparent;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      text-align: right;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+    .speed-num-input::-webkit-outer-spin-button,
+    .speed-num-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .custom-speed-badge .unit {
+      margin-left: 2px;
+      font-size: 11px;
+      color: var(--ink-muted);
+    }
+
+    .speed-calc-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--ink-muted);
+      margin-top: 6px;
+      flex-wrap: wrap;
+      gap: 4px;
     }
 
     .notice-banner {
@@ -812,13 +926,15 @@ export default {
   <!-- 面板 2 [电脑端]: 发送文件 (动态二维码循环轮播，纯前端本地分片，0 上传) -->
   <div class="panel" id="panel-desktop-send-file" style="display:none;">
     <div class="file-dropzone" onclick="document.getElementById('file-input').click()">
-      <div style="font-size:14px; font-weight:600; color:var(--ink); margin-bottom:4px;">点击选择本地文件（限 5MB 以内）</div>
-      <div style="font-size:12px; color:var(--ink-muted);">文件仅在浏览器本地分片编码播放，完全不上传至任何服务器</div>
+      <div style="font-size:14px; font-weight:600; color:var(--ink); margin-bottom:4px;">点击选择本地文件（支持 15MB 以内）</div>
+      <div style="font-size:12px; color:var(--ink-muted);">支持【屏幕动态码光学直传 (0经过服务器)】与【6位码端到端秒传 (0明文留存)】</div>
       <input type="file" id="file-input" style="display:none;" onchange="handleFileSelected(event)" />
     </div>
 
     <div class="privacy-notice">
-      ⚠️ 提示：动态二维码通过屏幕可视光传输，可能被旁人窥视，不具备文本传输模式的 AES 密钥隔离特性。
+      💡 <b>两种传输模式自由选用</b>：<br>
+      • <b>动态码循环播放</b>：屏幕光学直传，纯前端离线，0 网络中转，真正 0 服务器留存。<br>
+      • <b>6 位提取码秒传</b>：本地端到端 AES-256 加密分块流式传输，5分钟硬过期，阅后即焚，0 明文留存。
     </div>
 
     <div id="file-meta-section" style="display:none;">
@@ -840,11 +956,44 @@ export default {
         <div class="code-hint" id="file-code-hint">端到端 AES-256 加密中转 · 手机输入即刻下载 · 5分钟后销毁</div>
       </div>
 
-      <div class="speed-pills" id="file-speed-bar">
-        <span style="color:var(--ink-muted);">动态码轮播速度：</span>
-        <button class="speed-btn active" id="spd-btn-fast" onclick="setBroadcastSpeed('fast')">极速 160ms</button>
-        <button class="speed-btn" id="spd-btn-standard" onclick="setBroadcastSpeed('standard')">标准 250ms</button>
-        <button class="speed-btn" id="spd-btn-stable" onclick="setBroadcastSpeed('stable')">抗弱光 350ms</button>
+      <!-- 动态码轮播速率控制与调试控制台 -->
+      <div class="speed-panel-box" id="file-speed-bar">
+        <div class="speed-header-row">
+          <span style="font-size:12px; font-weight:600; color:var(--ink);">动态码轮播速率控制：</span>
+          <button class="speed-toggle-debug-btn" onclick="toggleCustomSpeedPanel()" id="btn-toggle-speed-debug">
+            ⚙️ 自定义调速 / 极限压测
+          </button>
+        </div>
+
+        <div class="speed-pills">
+          <button class="speed-btn" id="spd-btn-ludicrous" onclick="setBroadcastSpeed('ludicrous')">狂暴 60ms</button>
+          <button class="speed-btn" id="spd-btn-extreme" onclick="setBroadcastSpeed('extreme')">高速 100ms</button>
+          <button class="speed-btn active" id="spd-btn-fast" onclick="setBroadcastSpeed('fast')">极速 160ms</button>
+          <button class="speed-btn" id="spd-btn-standard" onclick="setBroadcastSpeed('standard')">标准 250ms</button>
+          <button class="speed-btn" id="spd-btn-stable" onclick="setBroadcastSpeed('stable')">抗弱光 350ms</button>
+        </div>
+
+        <!-- 自定义微调与极限测速滑块面板 -->
+        <div class="speed-custom-drawer" id="speed-custom-drawer" style="display:none;">
+          <div class="custom-slider-row">
+            <span class="custom-slider-label">精准间隔：</span>
+            <input type="range" class="speed-slider" id="custom-speed-slider" min="30" max="600" step="5" value="160" oninput="onCustomSpeedInput(this.value)" />
+            <div class="custom-speed-badge">
+              <input type="number" class="speed-num-input" id="custom-speed-num" min="20" max="1000" step="5" value="160" onchange="onCustomSpeedInput(this.value)" />
+              <span class="unit">ms</span>
+            </div>
+          </div>
+          <div class="speed-calc-row">
+            <span id="speed-fps-indicator">实测目标速率：~6.2 帧/秒 (160 ms/帧)</span>
+            <span id="speed-loop-time-est" style="color:var(--accent);">单轮轮播预计：--</span>
+          </div>
+          <div class="speed-calc-row" style="margin-top:6px;">
+            <label style="font-size:11px; color:var(--ink-muted); cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+              <input type="checkbox" id="speed-jitter-toggle" checked onchange="toggleSpeedJitter(this.checked)" />
+              启用 ±15% 随机微抖动（避免固定节奏与手机摄像头卷帘曝光周期死锁）
+            </label>
+          </div>
+        </div>
       </div>
 
       <div class="qr-region" id="file-qr-block" style="display:none;">
@@ -940,6 +1089,10 @@ export default {
           <span class="rx-diag-highlight" id="rx-diag-missing">计算中...</span>
         </div>
         <div class="rx-diag-row">
+          <span>摄像头采集速率：</span>
+          <span class="rx-diag-highlight" id="rx-diag-fps">测量中...</span>
+        </div>
+        <div class="rx-diag-row">
           <span>最新识别分片：</span>
           <span id="rx-diag-last-seen">等待识别...</span>
         </div>
@@ -982,8 +1135,8 @@ export default {
   </div>
 
   <div class="footnote">
-    <span>端到端 AES-256 / 动态码</span>
-    <span>本地分片 · 0 服务器留存</span>
+    <span>端到端 AES-256 / 光学动态码</span>
+    <span>0 服务器明文 · 阅后即焚</span>
   </div>
 </div>
 
@@ -1534,13 +1687,40 @@ export default {
   const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB 限制 (支持 3MB+ 大文件秒级分块直传)
   const CHUNK_PAYLOAD_SIZE = 700; // 紧凑协议黄金载荷：40KB 仅需 ~78 片！
 
-  // 速度档位配置：fast(极速 160ms，单轮仅需 12 秒), standard(250ms), stable(350ms)
+  // 速度档位与极限压测调试配置
   let currentSpeedMode = 'fast';
+  let customSpeedMs = 160;
+  let customJitterEnabled = true;
+
   const SPEED_CONFIGS = {
-    fast: { base: 160, jitter: 30, name: '极速 160ms' },
-    standard: { base: 250, jitter: 40, name: '标准 250ms' },
-    stable: { base: 350, jitter: 50, name: '抗弱光 350ms' }
+    ludicrous: { base: 60, jitter: 12, name: '狂暴 60ms' },
+    extreme: { base: 100, jitter: 18, name: '高速 100ms' },
+    fast: { base: 160, jitter: 25, name: '极速 160ms' },
+    standard: { base: 250, jitter: 35, name: '标准 250ms' },
+    stable: { base: 350, jitter: 50, name: '抗弱光 350ms' },
+    custom: { base: 160, jitter: 20, name: '自定义' }
   };
+
+  function updateSpeedIndicators() {
+    const ms = (currentSpeedMode === 'custom') ? customSpeedMs : (SPEED_CONFIGS[currentSpeedMode] ? SPEED_CONFIGS[currentSpeedMode].base : 160);
+    const fps = (1000 / ms).toFixed(1);
+    const fpsEl = document.getElementById('speed-fps-indicator');
+    if (fpsEl) fpsEl.innerText = '实测目标速率：~' + fps + ' 帧/秒 (' + ms + ' ms/帧)';
+
+    const estEl = document.getElementById('speed-loop-time-est');
+    if (estEl) {
+      if (fileChunks && fileChunks.length > 0) {
+        const loopSec = ((fileChunks.length * ms) / 1000).toFixed(1);
+        estEl.innerText = '单轮轮播预计：' + loopSec + ' 秒 (' + fileChunks.length + ' 片)';
+      } else {
+        estEl.innerText = '单轮轮播预计：-- (选文件后显示)';
+      }
+    }
+    const numEl = document.getElementById('custom-speed-num');
+    const sliderEl = document.getElementById('custom-speed-slider');
+    if (numEl && numEl.value != ms) numEl.value = ms;
+    if (sliderEl && sliderEl.value != ms) sliderEl.value = ms;
+  }
 
   function setBroadcastSpeed(mode) {
     if (!SPEED_CONFIGS[mode]) return;
@@ -1548,11 +1728,56 @@ export default {
     document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
     const target = document.getElementById('spd-btn-' + mode);
     if (target) target.classList.add('active');
+
+    if (mode !== 'custom') {
+      customSpeedMs = SPEED_CONFIGS[mode].base;
+    }
+    updateSpeedIndicators();
+  }
+
+  function toggleCustomSpeedPanel() {
+    const drawer = document.getElementById('speed-custom-drawer');
+    const btn = document.getElementById('btn-toggle-speed-debug');
+    if (!drawer) return;
+    const isShowing = drawer.style.display !== 'none';
+    drawer.style.display = isShowing ? 'none' : 'block';
+    if (btn) btn.classList.toggle('active', !isShowing);
+  }
+
+  function onCustomSpeedInput(val) {
+    let num = parseInt(val, 10);
+    if (isNaN(num)) return;
+    if (num < 20) num = 20;
+    if (num > 1000) num = 1000;
+
+    customSpeedMs = num;
+    currentSpeedMode = 'custom';
+    document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
+
+    for (const [key, cfg] of Object.entries(SPEED_CONFIGS)) {
+      if (key !== 'custom' && cfg.base === num) {
+        currentSpeedMode = key;
+        const b = document.getElementById('spd-btn-' + key);
+        if (b) b.classList.add('active');
+        break;
+      }
+    }
+    updateSpeedIndicators();
+  }
+
+  function toggleSpeedJitter(enabled) {
+    customJitterEnabled = !!enabled;
   }
 
   function getBroadcastDelay() {
-    const cfg = SPEED_CONFIGS[currentSpeedMode] || SPEED_CONFIGS.fast;
-    return cfg.base + Math.floor((Math.random() - 0.5) * cfg.jitter);
+    let base = customSpeedMs;
+    let jitter = customJitterEnabled ? Math.round(base * 0.15) : 0;
+    if (currentSpeedMode !== 'custom' && SPEED_CONFIGS[currentSpeedMode]) {
+      base = SPEED_CONFIGS[currentSpeedMode].base;
+      jitter = customJitterEnabled ? SPEED_CONFIGS[currentSpeedMode].jitter : 0;
+    }
+    if (jitter <= 0) return base;
+    return Math.max(20, base + Math.floor((Math.random() - 0.5) * jitter));
   }
 
   function shuffleArray(arr) {
@@ -1609,6 +1834,7 @@ export default {
     document.getElementById('file-name-label').innerText = file.name;
     document.getElementById('file-size-label').innerText = formatBytes(file.size);
     document.getElementById('btn-file-start').innerText = '开始连续播放';
+    updateSpeedIndicators();
   }
 
   async function prepareFileChunks() {
@@ -1639,6 +1865,7 @@ export default {
 
     // 初始化第一轮播放次序（按自然顺序），后续循环结束时打乱
     filePlayOrder = Array.from({ length: totalChunks }, (_, idx) => idx);
+    updateSpeedIndicators();
     return true;
   }
 
@@ -1704,9 +1931,11 @@ export default {
     const total = fileChunks.length;
     const pct = Math.round((current / total) * 100);
     const chunkNo = item ? item.chunkIndex : (realChunkIdx + 1);
-    const speedName = (SPEED_CONFIGS[currentSpeedMode] || {}).name || '';
+    const speedName = (currentSpeedMode === 'custom') 
+      ? ('自定义 ' + customSpeedMs + 'ms') 
+      : ((SPEED_CONFIGS[currentSpeedMode] || {}).name || '');
     document.getElementById('file-progress-label').innerText = 
-      '高速轮播中 [' + speedName + ']: 播放第 ' + current + '/' + total + ' 帧 [分片#' + chunkNo + '] · 码宽340px';
+      '动态码轮播中 [' + speedName + ']: 播放第 ' + current + '/' + total + ' 帧 [分片#' + chunkNo + '] · 码宽340px';
     document.getElementById('file-progress-bar').style.width = pct + '%';
   }
 
@@ -1866,7 +2095,11 @@ export default {
   let rxCachedCtx = null;
   let rxLastDecodeTime = 0;
   let rxScanStep = 0;
-  const SCAN_DECODE_INTERVAL_MS = 65; // ~15 次/秒高速解码频率，无缝捕获 160ms 极速轮播
+  const SCAN_DECODE_INTERVAL_MS = 35; // 高速无损采样 (~28 次/秒，满足 50ms~80ms 极速压测)
+  let rxDecodeFramesInSec = 0;
+  let rxLastFpsTime = 0;
+  let rxCurrentDecodeFps = 0;
+  let rxLastDecodeDurationMs = 0;
 
   function formatTimeAgo(ms) {
     if (!ms) return '无';
@@ -1878,9 +2111,18 @@ export default {
 
   function updateRxDiagnostics() {
     const missingEl = document.getElementById('rx-diag-missing');
+    const fpsEl = document.getElementById('rx-diag-fps');
     const lastSeenEl = document.getElementById('rx-diag-last-seen');
     const lastNewEl = document.getElementById('rx-diag-last-new');
     const stateEl = document.getElementById('rx-diag-state');
+
+    if (fpsEl) {
+      if (cameraScanning) {
+        fpsEl.innerHTML = '<span class="rx-diag-success">' + (rxCurrentDecodeFps || 15) + ' 次/秒</span> (单次耗时 ~' + (rxLastDecodeDurationMs || 8) + 'ms)';
+      } else {
+        fpsEl.innerText = '未开启扫描';
+      }
+    }
 
     if (!rxTotalChunks || !missingEl) return;
 
@@ -1929,7 +2171,7 @@ export default {
       } else if (rxLastNewTime > 0 && silentNewMs > 6000) {
         stateEl.innerHTML = '<span class="rx-diag-warning">💡 正在识别中，但收到的都是重复分片 (等电脑循环播放剩余分片)</span>';
       } else {
-        stateEl.innerHTML = '<span class="rx-diag-success">🟢 极速扫码采集中 (15 次/秒)</span>';
+        stateEl.innerHTML = '<span class="rx-diag-success">🟢 极速扫码采集中 (' + (rxCurrentDecodeFps || 15) + ' 次/秒)</span>';
       }
     }
   }
@@ -2066,6 +2308,7 @@ export default {
           rxCachedCtx.drawImage(video, sx, sy, sw, sh, 0, 0, destW, destH);
           const imageData = rxCachedCtx.getImageData(0, 0, destW, destH);
 
+          const decodeStartTime = performance.now();
           if (window.jsQR) {
             const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
               inversionAttempts: 'dontInvert'
@@ -2073,6 +2316,14 @@ export default {
             if (code && code.data) {
               processScannedQrData(code.data);
             }
+          }
+          const decodeDuration = Math.round(performance.now() - decodeStartTime);
+          rxLastDecodeDurationMs = decodeDuration;
+          rxDecodeFramesInSec++;
+          if (now - rxLastFpsTime >= 1000) {
+            rxCurrentDecodeFps = Math.round((rxDecodeFramesInSec * 1000) / (now - rxLastFpsTime));
+            rxDecodeFramesInSec = 0;
+            rxLastFpsTime = now;
           }
         }
       }
