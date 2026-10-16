@@ -171,7 +171,6 @@ export default {
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 2px;
-      flex-wrap: wrap;
       gap: 2px;
     }
 
@@ -181,7 +180,7 @@ export default {
       color: var(--ink-muted);
       font-size: 13px;
       font-weight: 500;
-      padding: 6px 12px;
+      padding: 6px 14px;
       border-radius: 6px;
       cursor: pointer;
       transition: all 0.15s ease;
@@ -267,7 +266,6 @@ export default {
       align-items: center;
       margin-top: 14px;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     .btn {
@@ -288,7 +286,7 @@ export default {
       background: var(--accent);
       color: #fff;
       font-size: 14px;
-      padding: 10px 16px;
+      padding: 10px 18px;
       flex: 1;
       min-width: 120px;
     }
@@ -313,19 +311,6 @@ export default {
     .btn-subtle:hover {
       background: var(--surface-raised);
       color: var(--ink);
-    }
-
-    .btn-danger {
-      background: transparent;
-      color: var(--danger);
-      border: 1px solid var(--border);
-      font-size: 13px;
-      padding: 9px 12px;
-    }
-
-    .btn-danger:hover {
-      background: rgba(239, 68, 68, 0.08);
-      border-color: var(--danger);
     }
 
     /* 二维码区域 */
@@ -432,7 +417,7 @@ export default {
       margin-bottom: 12px;
     }
 
-    /* 手机端 URL 接收视图 */
+    /* 手机端接收视图 */
     .receiver-deck {
       display: none;
     }
@@ -604,13 +589,17 @@ export default {
     <span class="app-sub" id="header-sub">私密传输 & 动态码互传</span>
   </div>
 
-  <!-- 顶部导航栏 -->
+  <!-- 顶部导航栏 (根据设备模式动态过滤显示) -->
   <div class="top-bar">
     <div class="tab-group" id="nav-tabs">
-      <button class="tab-btn active" id="tab-send" onclick="switchTab('send')">发送文本</button>
-      <button class="tab-btn" id="tab-send-file" onclick="switchTab('send-file')">发送文件</button>
-      <button class="tab-btn" id="tab-recv" onclick="switchTab('recv')">提取文本</button>
-      <button class="tab-btn" id="tab-recv-file" onclick="switchTab('recv-file')">扫码收文件</button>
+      <!-- 电脑端专属标签 -->
+      <button class="tab-btn desktop-only" id="tab-desktop-send-text" onclick="switchTab('desktop-send-text')">发送文本</button>
+      <button class="tab-btn desktop-only" id="tab-desktop-send-file" onclick="switchTab('desktop-send-file')">发送文件</button>
+      <button class="tab-btn desktop-only" id="tab-desktop-recv-code" onclick="switchTab('desktop-recv-code')">输入码提取</button>
+
+      <!-- 手机端专属标签 -->
+      <button class="tab-btn mobile-only" id="tab-mobile-send-code" onclick="switchTab('mobile-send-code')" style="display:none;">发送文本</button>
+      <button class="tab-btn mobile-only" id="tab-mobile-recv-file" onclick="switchTab('mobile-recv-file')" style="display:none;">扫码收文件</button>
     </div>
 
     <div class="top-actions">
@@ -620,32 +609,23 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 1: 发送文本 (支持生成静态二维码或 6 位提取码) -->
-  <div class="panel" id="panel-sender">
-    <textarea id="input-payload" placeholder="粘贴需要发送的长文本..."></textarea>
+  <!-- 面板 1 [电脑端]: 发送文本 (主要操作: 生成扫码识别码) -->
+  <div class="panel" id="panel-desktop-send-text">
+    <textarea id="input-payload" placeholder="粘贴需要发送给手机的长文本..."></textarea>
     
     <div class="control-row">
       <button class="btn btn-subtle" onclick="clearInput()">清空</button>
       <button class="btn btn-action" id="btn-qr" onclick="submitAsQR()">生成扫码识别码</button>
-      <button class="btn btn-subtle" id="btn-code" onclick="submitAsCode()" title="适合手机发回电脑：生成 6 位提取码">生成提取码</button>
     </div>
 
-    <!-- 二维码显示 -->
     <div class="qr-region" id="qr-block">
       <div class="qr-frame" id="qr-target"></div>
-      <div class="qr-caption">低密度短码 · 屏幕扫码秒识别</div>
-    </div>
-
-    <!-- 6 位提取码显示 -->
-    <div class="code-display-card" id="code-block">
-      <div class="code-hint">在电脑上打开本页并输入以下提取码：</div>
-      <div class="code-digits" id="digit-value">------</div>
-      <div class="code-hint">5 分钟内有效 · 电脑输入后即刻物理销毁</div>
+      <div class="qr-caption">低密度短码 · iPhone 摄像头扫码秒开</div>
     </div>
   </div>
 
-  <!-- 面板 2: 发送文件 (动态二维码循环轮播，纯前端本地处理，0 服务器上传) -->
-  <div class="panel" id="panel-file-sender" style="display:none;">
+  <!-- 面板 2 [电脑端]: 发送文件 (动态二维码循环轮播，纯前端本地分片，0 上传) -->
+  <div class="panel" id="panel-desktop-send-file" style="display:none;">
     <div class="file-dropzone" onclick="document.getElementById('file-input').click()">
       <div style="font-size:14px; font-weight:600; color:var(--ink); margin-bottom:4px;">点击选择本地文件（限 5MB 以内）</div>
       <div style="font-size:12px; color:var(--ink-muted);">文件仅在浏览器本地分片编码播放，完全不上传至任何服务器</div>
@@ -653,7 +633,7 @@ export default {
     </div>
 
     <div class="privacy-notice">
-      ⚠️ 提示：动态二维码通过屏幕可视光传输，可能被旁人窥视或录屏，不具备文本传输模式的 AES 密钥隔离特性。
+      ⚠️ 提示：动态二维码通过屏幕可视光传输，可能被旁人窥视，不具备文本传输模式的 AES 密钥隔离特性。
     </div>
 
     <div id="file-meta-section" style="display:none;">
@@ -677,22 +657,21 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 3: 提取文本接收端 (Mac 或手机输入 6 位提取码) -->
-  <div class="panel" id="panel-retriever" style="display:none;">
+  <!-- 面板 3 [电脑端]: 输入码提取 (接收手机发送过来的文本) -->
+  <div class="panel" id="panel-desktop-recv-code" style="display:none;">
     <div class="retrieve-box">
       <input type="text" class="code-input" id="input-code" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCode()" />
       <button class="btn btn-retrieve" onclick="fetchByCode()">提取文本</button>
     </div>
 
     <div class="content-viewport" id="recv-preview" style="min-height: 120px; color: var(--ink-muted);">
-      输入发送端显示的 6 位提取码，点击提取即可在本地解密...
+      输入手机上显示的 6 位提取码，点击提取即可在电脑本地解密...
     </div>
 
     <div style="margin-top: 14px; text-align: right;">
       <button class="btn btn-subtle" id="btn-copy-retrieved" onclick="copyRetrievedText()" style="display:none;">复制全文</button>
     </div>
 
-    <!-- 手机扫码入口：自动获取当前鲁棒 URL 生成二维码 -->
     <div class="phone-entry-guide" id="entry-guide-block">
       <div class="guide-label">手机尚未打开本网页？</div>
       <div class="guide-sub">iPhone 扫码直达发送界面，粘贴文本点“生成提取码”</div>
@@ -701,8 +680,24 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 4: 扫码接收文件 (手机端通过摄像头连续扫码重组下载) -->
-  <div class="panel" id="panel-file-receiver" style="display:none;">
+  <!-- 面板 4 [手机端]: 发送文本 (主要操作: 生成提取码) -->
+  <div class="panel" id="panel-mobile-send-code" style="display:none;">
+    <textarea id="mobile-input-payload" placeholder="在此粘贴长文本，生成提取码发送给电脑..."></textarea>
+    
+    <div class="control-row">
+      <button class="btn btn-subtle" onclick="clearMobileInput()">清空</button>
+      <button class="btn btn-action" id="btn-mobile-code" onclick="submitMobileCode()">生成提取码</button>
+    </div>
+
+    <div class="code-display-card" id="mobile-code-block">
+      <div class="code-hint">在电脑上打开本站并输入以下提取码：</div>
+      <div class="code-digits" id="mobile-digit-value">------</div>
+      <div class="code-hint">5 分钟内有效 · 电脑输入后即刻物理销毁</div>
+    </div>
+  </div>
+
+  <!-- 面板 5 [手机端]: 扫码收文件 (手机摄像头扫描电脑屏幕上的动态二维码) -->
+  <div class="panel" id="panel-mobile-recv-file" style="display:none;">
     <div class="notice-banner" id="rx-file-notice"></div>
 
     <div class="camera-viewport" id="camera-box" style="display:none;">
@@ -737,7 +732,7 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 5: 手机端扫码直达接收视图 (通过文本二维码 URL 锚点进入) -->
+  <!-- 面板 6: 手机端扫码直达接收视图 (通过文本二维码 URL 锚点进入) -->
   <div class="panel receiver-deck" id="panel-receiver">
     <button class="btn btn-huge-copy" id="btn-copy" onclick="triggerCopy()">
       <span id="copy-text">复制全文</span>
@@ -778,11 +773,10 @@ export default {
   applyTheme(getPreferredTheme());
 
   // ==========================================
-  // 2. 设备模式判断与切换 (桌面端 / 手机端)
+  // 2. 设备模式判断与定向界面过滤
   // ==========================================
   const DEVICE_KEY = 'relay_device_pref';
   function detectDeviceType() {
-    // 综合 User-Agent、触控特性与屏幕特征进行合理判定
     const ua = navigator.userAgent || '';
     const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
     const isTouch = navigator.maxTouchPoints > 1;
@@ -799,68 +793,71 @@ export default {
     return detectDeviceType();
   }
 
-  function updateDeviceButton(mode) {
+  function applyDeviceMode(mode) {
     const btn = document.getElementById('device-btn');
-    if (!btn) return;
     const isMobile = mode === 'mobile';
-    btn.innerText = isMobile ? '手机端' : '桌面端';
+    if (btn) btn.innerText = isMobile ? '手机端' : '桌面端';
+
+    // 控制标签组的显示与隐藏
+    const desktopTabs = document.querySelectorAll('.desktop-only');
+    const mobileTabs = document.querySelectorAll('.mobile-only');
+
+    desktopTabs.forEach(el => el.style.display = isMobile ? 'none' : 'inline-block');
+    mobileTabs.forEach(el => el.style.display = isMobile ? 'inline-block' : 'none');
+
+    // 默认展示各端核心功能
+    if (isMobile) {
+      switchTab('mobile-send-code');
+    } else {
+      switchTab('desktop-send-text');
+    }
   }
 
   function toggleDeviceMode() {
     const current = getActiveDeviceMode();
     const next = current === 'mobile' ? 'desktop' : 'mobile';
     localStorage.setItem(DEVICE_KEY, next);
-    updateDeviceButton(next);
-    // 切换模式后，重置默认选中的标签
-    setDefaultTabForMode(next);
-  }
-
-  function setDefaultTabForMode(mode) {
-    if (mode === 'mobile') {
-      // 手机端优先展示接收功能：优先输入码提取（若有文件接收意图也可点收文件）
-      switchTab('recv');
-    } else {
-      // 桌面端优先展示发送功能
-      switchTab('send');
-    }
+    applyDeviceMode(next);
   }
 
   // ==========================================
   // 3. 标签切换管理器
   // ==========================================
-  let currentActiveTab = 'send';
-  function switchTab(tab) {
-    currentActiveTab = tab;
-    const tabSend = document.getElementById('tab-send');
-    const tabSendFile = document.getElementById('tab-send-file');
-    const tabRecv = document.getElementById('tab-recv');
-    const tabRecvFile = document.getElementById('tab-recv-file');
+  const ALL_PANELS = [
+    'panel-desktop-send-text',
+    'panel-desktop-send-file',
+    'panel-desktop-recv-code',
+    'panel-mobile-send-code',
+    'panel-mobile-recv-file'
+  ];
 
-    const panelSend = document.getElementById('panel-sender');
-    const panelSendFile = document.getElementById('panel-file-sender');
-    const panelRecv = document.getElementById('panel-retriever');
-    const panelRecvFile = document.getElementById('panel-file-receiver');
+  function switchTab(tabKey) {
+    // 更新所有标签的 active 状态
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById('tab-' + tabKey);
+    if (activeBtn) activeBtn.classList.add('active');
 
-    tabSend.classList.toggle('active', tab === 'send');
-    tabSendFile.classList.toggle('active', tab === 'send-file');
-    tabRecv.classList.toggle('active', tab === 'recv');
-    tabRecvFile.classList.toggle('active', tab === 'recv-file');
+    // 隐藏所有常规面板
+    ALL_PANELS.forEach(pid => {
+      const p = document.getElementById(pid);
+      if (p) p.style.display = 'none';
+    });
 
-    panelSend.style.display = (tab === 'send') ? 'block' : 'none';
-    panelSendFile.style.display = (tab === 'send-file') ? 'block' : 'none';
-    panelRecv.style.display = (tab === 'recv') ? 'block' : 'none';
-    panelRecvFile.style.display = (tab === 'recv-file') ? 'block' : 'none';
+    // 展示当前选定的面板
+    const targetPanel = document.getElementById('panel-' + tabKey);
+    if (targetPanel) targetPanel.style.display = 'block';
 
-    // 离开文件接收页时停止摄像头
-    if (tab !== 'recv-file') {
+    // 状态管理：切离摄像头接收面板时释放摄像头
+    if (tabKey !== 'mobile-recv-file') {
       stopCameraStream();
     }
-    // 离开文件发送页时暂停广播
-    if (tab !== 'send-file' && fileBroadcastRunning) {
+    // 状态管理：切离文件广播面板时暂停广播
+    if (tabKey !== 'desktop-send-file' && fileBroadcastRunning) {
       pauseFileBroadcast();
     }
 
-    if (tab === 'recv') {
+    // 切换到电脑端提取码面板时，自动渲染入口直达码并聚焦输入框
+    if (tabKey === 'desktop-recv-code') {
       renderEntryQR();
       const codeInput = document.getElementById('input-code');
       if (codeInput) codeInput.focus();
@@ -869,17 +866,32 @@ export default {
 
   // 字符计数
   const inputEl = document.getElementById('input-payload');
+  const mobileInputEl = document.getElementById('mobile-input-payload');
   const counterEl = document.getElementById('status-counter');
-  inputEl.addEventListener('input', () => {
-    counterEl.innerText = inputEl.value.length + ' 字符';
-  });
+
+  function updateCharCount(len) {
+    if (counterEl) counterEl.innerText = len + ' 字符';
+  }
+
+  if (inputEl) {
+    inputEl.addEventListener('input', () => updateCharCount(inputEl.value.length));
+  }
+  if (mobileInputEl) {
+    mobileInputEl.addEventListener('input', () => updateCharCount(mobileInputEl.value.length));
+  }
 
   function clearInput() {
     inputEl.value = '';
-    counterEl.innerText = '0 字符';
+    updateCharCount(0);
     document.getElementById('qr-block').style.display = 'none';
-    document.getElementById('code-block').style.display = 'none';
     inputEl.focus();
+  }
+
+  function clearMobileInput() {
+    mobileInputEl.value = '';
+    updateCharCount(0);
+    document.getElementById('mobile-code-block').style.display = 'none';
+    mobileInputEl.focus();
   }
 
   // 规范化 URL
@@ -895,7 +907,7 @@ export default {
     return '/';
   }
 
-  // 渲染手机扫码直达二维码
+  // 渲染手机扫码直达二维码 (电脑端提取界面)
   let entryQrRendered = false;
   function renderEntryQR() {
     if (entryQrRendered) return;
@@ -969,7 +981,7 @@ export default {
     return new TextDecoder().decode(decrypted);
   }
 
-  // 4.1 文本生成扫码二维码
+  // 4.1 电脑端主操作：文本生成扫码二维码 (电脑 -> 手机)
   async function submitAsQR() {
     const val = inputEl.value.trim();
     if (!val) return;
@@ -993,7 +1005,6 @@ export default {
       const accessUrl = getRobustCleanUrl() + '#i=' + data.id + '&k=' + rawStr;
       const qrBlock = document.getElementById('qr-block');
       const qrTarget = document.getElementById('qr-target');
-      document.getElementById('code-block').style.display = 'none';
       qrTarget.innerHTML = '';
 
       new QRCode(qrTarget, {
@@ -1011,12 +1022,12 @@ export default {
     }
   }
 
-  // 4.2 文本生成 6 位提取码
-  async function submitAsCode() {
-    const val = inputEl.value.trim();
+  // 4.2 手机端主操作：文本生成 6 位提取码 (手机 -> 电脑)
+  async function submitMobileCode() {
+    const val = mobileInputEl.value.trim();
     if (!val) return alert('请先输入长文本');
 
-    const btn = document.getElementById('btn-code');
+    const btn = document.getElementById('btn-mobile-code');
     btn.disabled = true;
     btn.innerText = '正在处理...';
 
@@ -1035,9 +1046,8 @@ export default {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '上传失败');
 
-      document.getElementById('qr-block').style.display = 'none';
-      const codeBlock = document.getElementById('code-block');
-      document.getElementById('digit-value').innerText = digits.slice(0, 3) + ' ' + digits.slice(3);
+      const codeBlock = document.getElementById('mobile-code-block');
+      document.getElementById('mobile-digit-value').innerText = digits.slice(0, 3) + ' ' + digits.slice(3);
       codeBlock.style.display = 'block';
     } catch (e) {
       alert(e.message);
@@ -1047,7 +1057,7 @@ export default {
     }
   }
 
-  // 4.3 提取 6 位码对应的内容
+  // 4.3 电脑端主操作：提取 6 位码对应的内容
   async function fetchByCode() {
     const code = document.getElementById('input-code').value.replaceAll(' ', '').trim();
     if (code.length !== 6 || !/^[0-9]+$/.test(code)) {
@@ -1069,7 +1079,7 @@ export default {
 
       preview.style.color = 'var(--ink)';
       preview.innerText = text;
-      counterEl.innerText = text.length + ' 字符';
+      updateCharCount(text.length);
 
       const copyBtn = document.getElementById('btn-copy-retrieved');
       copyBtn.style.display = 'inline-flex';
@@ -1092,6 +1102,7 @@ export default {
     });
   }
 
+  // 手机端扫静态码进入后的复制全文
   function triggerCopy() {
     const content = document.getElementById('rx-content').innerText;
     navigator.clipboard.writeText(content).then(() => {
@@ -1108,18 +1119,18 @@ export default {
   }
 
   // ==========================================
-  // 5. 动态二维码文件发送 (桌面端纯前端本地分片轮播)
+  // 5. 电脑端文件发送 (动态二维码循环轮播，纯前端 0 服务器)
   // ==========================================
   let selectedFile = null;
-  let fileChunks = []; // 存储各个二维码分片字符串
+  let fileChunks = [];
   let fileBroadcastTimer = null;
   let fileBroadcastRunning = false;
   let fileBroadcastIndex = 0;
   let fileQrInstance = null;
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB 限制
-  const CHUNK_PAYLOAD_SIZE = 280; // 经基准验证：280 字节 base64 可保持二维码颗粒适中、手机极易识别
-  const BROADCAST_INTERVAL_MS = 250; // 4 帧/秒循环播放，兼顾手机摄像头对焦与流畅度
+  const CHUNK_PAYLOAD_SIZE = 280;
+  const BROADCAST_INTERVAL_MS = 250;
 
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + ' B';
@@ -1127,7 +1138,6 @@ export default {
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   }
 
-  // ArrayBuffer 转换为 Base64 (防止超大文件 stack overflow)
   function bufferToBase64(buffer) {
     let binary = '';
     const bytes = new Uint8Array(buffer);
@@ -1149,7 +1159,6 @@ export default {
       return;
     }
 
-    // 重置已有播放状态并保留当前文件
     pauseFileBroadcast();
     fileChunks = [];
     fileBroadcastIndex = 0;
@@ -1171,7 +1180,6 @@ export default {
     const arrayBuffer = await selectedFile.arrayBuffer();
     const base64Data = bufferToBase64(arrayBuffer);
     
-    // 生成一个 6 字符的传输任务唯一 ID
     const transferId = Math.random().toString(36).substring(2, 8);
     const totalChunks = Math.ceil(base64Data.length / CHUNK_PAYLOAD_SIZE);
     
@@ -1179,14 +1187,14 @@ export default {
     for (let i = 0; i < totalChunks; i++) {
       const slice = base64Data.substring(i * CHUNK_PAYLOAD_SIZE, (i + 1) * CHUNK_PAYLOAD_SIZE);
       const chunkObj = {
-        v: 1, // 协议版本
-        id: transferId, // 传输唯一标识
-        n: selectedFile.name, // 文件名
-        t: selectedFile.type || 'application/octet-stream', // MIME类型
-        s: selectedFile.size, // 文件大小
-        i: i + 1, // 当前分片序号 (1-indexed)
-        total: totalChunks, // 总分片数
-        d: slice // 当前切片 base64 数据
+        v: 1,
+        id: transferId,
+        n: selectedFile.name,
+        t: selectedFile.type || 'application/octet-stream',
+        s: selectedFile.size,
+        i: i + 1,
+        total: totalChunks,
+        d: slice
       };
       fileChunks.push(JSON.stringify(chunkObj));
     }
@@ -1197,10 +1205,8 @@ export default {
     if (!selectedFile) return;
 
     if (fileBroadcastRunning) {
-      // 暂停广播
       pauseFileBroadcast();
     } else {
-      // 开始/恢复广播
       if (fileChunks.length === 0) {
         document.getElementById('btn-file-start').disabled = true;
         document.getElementById('btn-file-start').innerText = '正在分片编码...';
@@ -1223,7 +1229,7 @@ export default {
         text: fileChunks[fileBroadcastIndex] || 'ready',
         width: 200,
         height: 200,
-        correctLevel: QRCode.CorrectLevel.L // 使用低纠错率保证稀疏易识别
+        correctLevel: QRCode.CorrectLevel.L
       });
     }
 
@@ -1274,19 +1280,18 @@ export default {
   }
 
   // ==========================================
-  // 6. 扫码接收文件 (手机端摄像头扫码收集重组)
+  // 6. 手机端扫码收文件 (摄像头连续扫描、去重组装)
   // ==========================================
   let cameraStream = null;
   let cameraScanning = false;
   let cameraScanAnimId = null;
 
-  // 接收状态机
   let rxTransferId = null;
   let rxFileName = '';
   let rxFileType = '';
   let rxFileSize = 0;
   let rxTotalChunks = 0;
-  let rxChunksMap = new Map(); // 存储已收到的分片 Map<index, base64Slice>
+  let rxChunksMap = new Map();
 
   function setRxFileNotice(msg, type) {
     const el = document.getElementById('rx-file-notice');
@@ -1318,7 +1323,6 @@ export default {
     }
 
     try {
-      // 优先启用手机后置环境摄像头
       const constraints = {
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
@@ -1372,12 +1376,10 @@ export default {
   function processScannedQrData(dataStr) {
     try {
       const chunk = JSON.parse(dataStr);
-      // 校验分片数据协议标识
       if (chunk.v !== 1 || !chunk.id || !chunk.total || !chunk.i || !chunk.d) {
         return;
       }
 
-      // 如果扫描到了全新的传输任务，自动重置旧任务
       if (rxTransferId !== chunk.id) {
         rxTransferId = chunk.id;
         rxFileName = chunk.n || 'received_file';
@@ -1390,26 +1392,23 @@ export default {
         document.getElementById('rx-file-name').innerText = rxFileName + ' (' + formatBytes(rxFileSize) + ')';
       }
 
-      // 去重保存该分片
       const chunkIdx = chunk.i;
       if (!rxChunksMap.has(chunkIdx)) {
         rxChunksMap.set(chunkIdx, chunk.d);
-        if (navigator.vibrate) navigator.vibrate(25); // 捕获新分片微弱震动反馈
+        if (navigator.vibrate) navigator.vibrate(25);
       }
 
-      // 更新接收进度
       const receivedCount = rxChunksMap.size;
       const pct = Math.round((receivedCount / rxTotalChunks) * 100);
       document.getElementById('rx-file-status').innerText = 
         receivedCount + ' / ' + rxTotalChunks + ' 片 (' + pct + '%)';
       document.getElementById('rx-file-progress-bar').style.width = pct + '%';
 
-      // 检查是否所有切片已完整收齐
       if (receivedCount === rxTotalChunks) {
         assembleAndCompleteFile();
       }
     } catch (e) {
-      // 忽略非文件协议的普通二维码
+      // 忽略非文件协议二维码
     }
   }
 
@@ -1417,7 +1416,6 @@ export default {
     stopCameraReceiver();
 
     try {
-      // 按分片序号 1 ~ total 顺序重组 Base64
       let fullBase64 = '';
       for (let i = 1; i <= rxTotalChunks; i++) {
         const slice = rxChunksMap.get(i);
@@ -1427,7 +1425,6 @@ export default {
         fullBase64 += slice;
       }
 
-      // 将 Base64 还原为二进制 Uint8Array
       const binaryString = atob(fullBase64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -1491,11 +1488,7 @@ export default {
   // 7. 页面初始化加载与路由检测
   // ==========================================
   window.addEventListener('DOMContentLoaded', async () => {
-    // 初始化设备模式与默认展示面板
-    const mode = getActiveDeviceMode();
-    updateDeviceButton(mode);
-
-    // 检查是否有文本二维码 URL Hash 直达
+    // 检查是否有静态文本二维码 URL Hash 直达 (手机扫码接收电脑文本)
     const hash = window.location.hash.substring(1);
     if (hash) {
       const query = new URLSearchParams(hash);
@@ -1504,10 +1497,10 @@ export default {
 
       if (id && keyStr) {
         document.getElementById('nav-tabs').style.display = 'none';
-        document.getElementById('panel-sender').style.display = 'none';
-        document.getElementById('panel-file-sender').style.display = 'none';
-        document.getElementById('panel-retriever').style.display = 'none';
-        document.getElementById('panel-file-receiver').style.display = 'none';
+        ALL_PANELS.forEach(pid => {
+          const p = document.getElementById(pid);
+          if (p) p.style.display = 'none';
+        });
         document.getElementById('panel-receiver').style.display = 'block';
         const rxContent = document.getElementById('rx-content');
 
@@ -1520,7 +1513,7 @@ export default {
           const text = await decryptText(data.cipherText, key);
 
           rxContent.innerText = text;
-          counterEl.innerText = text.length + ' 字符';
+          updateCharCount(text.length);
         } catch (err) {
           rxContent.innerText = '内容读取失败：' + err.message;
         }
@@ -1529,7 +1522,8 @@ export default {
     }
 
     // 正常进入时根据设备类型设置默认面板
-    setDefaultTabForMode(mode);
+    const mode = getActiveDeviceMode();
+    applyDeviceMode(mode);
   });
 </script>
 </body>
