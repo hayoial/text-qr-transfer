@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // API: 存储加密密文 (通用: 支持自定义 key 或随机短 ID，5分钟硬过期)
+    // API: 存储普通密文 (文本模式)
     if (url.pathname === "/api/store" && request.method === "POST") {
       try {
         if (!env.TEXT_KV) {
@@ -28,7 +28,7 @@ export default {
       }
     }
 
-    // API: 获取密文 (阅后即焚)
+    // API: 获取文本密文 (阅后即焚)
     if (url.pathname.startsWith("/api/get/") && request.method === "GET") {
       try {
         if (!env.TEXT_KV) {
@@ -42,6 +42,77 @@ export default {
         await env.TEXT_KV.delete(id);
 
         return new Response(JSON.stringify({ cipherText }), {
+          headers: { "content-type": "application/json" }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // API: 文件分块密文存储 (支持大文件高并发秒级中转，每块最大 2MB)
+    if (url.pathname === "/api/file/chunk" && request.method === "POST") {
+      try {
+        if (!env.TEXT_KV) {
+          return new Response(JSON.stringify({ error: "Storage not configured" }), { status: 500 });
+        }
+        const body = await request.json();
+        const { id, chunkIdx, totalChunks, cipherSlice, meta } = body;
+        if (!id || chunkIdx === undefined || !cipherSlice) {
+          return new Response(JSON.stringify({ error: "Invalid parameters" }), { status: 400 });
+        }
+
+        // 存储该分块 (5分钟硬过期)
+        const key = id + "_c_" + chunkIdx;
+        await env.TEXT_KV.put(key, cipherSlice, { expirationTtl: 300 });
+
+        // 如果包含文件元数据，保存元数据块
+        if (meta) {
+          await env.TEXT_KV.put(id + "_meta", JSON.stringify(meta), { expirationTtl: 300 });
+        }
+
+        return new Response(JSON.stringify({ ok: true, chunkIdx }), {
+          headers: { "content-type": "application/json" }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // API: 获取文件元数据
+    if (url.pathname.startsWith("/api/file/meta/") && request.method === "GET") {
+      try {
+        if (!env.TEXT_KV) {
+          return new Response(JSON.stringify({ error: "Storage not configured" }), { status: 500 });
+        }
+        const id = url.pathname.split("/").pop();
+        const metaStr = await env.TEXT_KV.get(id + "_meta");
+        if (!metaStr) {
+          return new Response(JSON.stringify({ error: "文件不存在、已过期或提取码错误" }), { status: 404 });
+        }
+        return new Response(metaStr, { headers: { "content-type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // API: 获取文件分块 (可选清理)
+    if (url.pathname.startsWith("/api/file/chunk/") && request.method === "GET") {
+      try {
+        if (!env.TEXT_KV) {
+          return new Response(JSON.stringify({ error: "Storage not configured" }), { status: 500 });
+        }
+        const parts = url.pathname.split("/").slice(4); // [id, chunkIdx]
+        const id = parts[0];
+        const chunkIdx = parts[1];
+        const key = id + "_c_" + chunkIdx;
+        const cipherSlice = await env.TEXT_KV.get(key);
+        if (!cipherSlice) {
+          return new Response(JSON.stringify({ error: "分块已过期或已销毁" }), { status: 404 });
+        }
+        // 阅后即焚清理
+        await env.TEXT_KV.delete(key);
+
+        return new Response(JSON.stringify({ cipherSlice }), {
           headers: { "content-type": "application/json" }
         });
       } catch (e) {
@@ -711,12 +782,20 @@ export default {
       </div>
 
       <div class="control-row" style="margin-top:10px;">
-        <button class="btn btn-action" id="btn-file-start" onclick="toggleFileBroadcast()">开始连续播放</button>
+        <button class="btn btn-action" id="btn-file-start" onclick="toggleFileBroadcast()">动态码循环播放</button>
+        <button class="btn btn-retrieve" id="btn-file-cloud-code" onclick="uploadFileAsEncryptedCode()">⚡ 生成 6 位提取码 (秒传 3MB+)</button>
         <button class="btn btn-subtle" id="btn-file-cancel" onclick="cancelFileBroadcast()">取消重选</button>
       </div>
 
-      <div class="speed-pills">
-        <span style="color:var(--ink-muted);">轮播速度：</span>
+      <!-- 6 位提取码文件传输展示卡片 -->
+      <div class="code-display-card" id="file-code-display-card" style="display:none; margin-top:12px;">
+        <div class="code-hint">在手机端点击【输入码提取】并输入以下 6 位码：</div>
+        <div class="code-digits" id="file-digit-value">------</div>
+        <div class="code-hint" id="file-code-hint">端到端 AES-256 加密中转 · 手机输入即刻下载 · 5分钟后销毁</div>
+      </div>
+
+      <div class="speed-pills" id="file-speed-bar">
+        <span style="color:var(--ink-muted);">动态码轮播速度：</span>
         <button class="speed-btn active" id="spd-btn-fast" onclick="setBroadcastSpeed('fast')">极速 160ms</button>
         <button class="speed-btn" id="spd-btn-standard" onclick="setBroadcastSpeed('standard')">标准 250ms</button>
         <button class="speed-btn" id="spd-btn-stable" onclick="setBroadcastSpeed('stable')">抗弱光 350ms</button>
@@ -732,19 +811,20 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 3 [电脑端]: 输入码提取 (接收手机发送过来的文本) -->
+  <!-- 面板 3 [电脑端]: 输入码提取 (接收手机或其他端发送的文本或秒传文件) -->
   <div class="panel" id="panel-desktop-recv-code" style="display:none;">
     <div class="retrieve-box">
       <input type="text" class="code-input" id="input-code" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCode()" />
-      <button class="btn btn-retrieve" onclick="fetchByCode()">提取文本</button>
+      <button class="btn btn-retrieve" id="btn-fetch-desktop" onclick="fetchByCode()">提取内容</button>
     </div>
 
     <div class="content-viewport" id="recv-preview" style="min-height: 120px; color: var(--ink-muted);">
-      输入手机上显示的 6 位提取码，点击提取即可在电脑本地解密...
+      输入发送端显示的 6 位提取码，点击提取即可在本地端到端解密文本或下载文件...
     </div>
 
     <div style="margin-top: 14px; text-align: right;">
       <button class="btn btn-subtle" id="btn-copy-retrieved" onclick="copyRetrievedText()" style="display:none;">复制全文</button>
+      <a class="btn btn-action" id="btn-download-retrieved" style="display:none; text-decoration:none; padding:10px 18px; font-size:14px;" download>📥 下载文件</a>
     </div>
 
     <div class="phone-entry-guide" id="entry-guide-block">
@@ -771,19 +851,20 @@ export default {
     </div>
   </div>
 
-  <!-- 面板 [手机端]: 输入码提取 (手机提取电脑或其他手机发送的文本) -->
+  <!-- 面板 [手机端]: 输入码提取 (手机提取电脑或其他端发送的文本或秒传文件) -->
   <div class="panel" id="panel-mobile-recv-code" style="display:none;">
     <div class="retrieve-box">
       <input type="text" class="code-input" id="input-code-mobile" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCodeMobile()" />
-      <button class="btn btn-retrieve" onclick="fetchByCodeMobile()">提取文本</button>
+      <button class="btn btn-retrieve" id="btn-fetch-mobile" onclick="fetchByCodeMobile()">提取内容</button>
     </div>
 
     <div class="content-viewport" id="recv-preview-mobile" style="min-height: 120px; color: var(--ink-muted);">
-      输入电脑或发送端显示的 6 位提取码，点击提取即可在手机本地解密...
+      输入电脑或发送端显示的 6 位提取码，点击提取即可在手机本地解密文本或极速下载文件...
     </div>
 
     <div style="margin-top: 14px; text-align: right;">
       <button class="btn btn-subtle" id="btn-copy-retrieved-mobile" onclick="copyRetrievedTextMobile()" style="display:none;">复制全文</button>
+      <a class="btn btn-action" id="btn-download-retrieved-mobile" style="display:none; text-decoration:none; padding:10px 18px; font-size:14px;" download>📥 下载文件</a>
     </div>
   </div>
 
