@@ -666,6 +666,7 @@ export default {
 
       <!-- 手机端专属标签 -->
       <button class="tab-btn mobile-only" id="tab-mobile-send-code" onclick="switchTab('mobile-send-code')" style="display:none;">发送文本</button>
+      <button class="tab-btn mobile-only" id="tab-mobile-recv-code" onclick="switchTab('mobile-recv-code')" style="display:none;">输入码提取</button>
       <button class="tab-btn mobile-only" id="tab-mobile-recv-file" onclick="switchTab('mobile-recv-file')" style="display:none;">扫码收文件</button>
     </div>
 
@@ -767,6 +768,22 @@ export default {
       <div class="code-hint">在电脑上打开本站并输入以下提取码：</div>
       <div class="code-digits" id="mobile-digit-value">------</div>
       <div class="code-hint">5 分钟内有效 · 电脑输入后即刻物理销毁</div>
+    </div>
+  </div>
+
+  <!-- 面板 [手机端]: 输入码提取 (手机提取电脑或其他手机发送的文本) -->
+  <div class="panel" id="panel-mobile-recv-code" style="display:none;">
+    <div class="retrieve-box">
+      <input type="text" class="code-input" id="input-code-mobile" maxlength="6" placeholder="6 位提取码" onkeydown="if(event.key==='Enter')fetchByCodeMobile()" />
+      <button class="btn btn-retrieve" onclick="fetchByCodeMobile()">提取文本</button>
+    </div>
+
+    <div class="content-viewport" id="recv-preview-mobile" style="min-height: 120px; color: var(--ink-muted);">
+      输入电脑或发送端显示的 6 位提取码，点击提取即可在手机本地解密...
+    </div>
+
+    <div style="margin-top: 14px; text-align: right;">
+      <button class="btn btn-subtle" id="btn-copy-retrieved-mobile" onclick="copyRetrievedTextMobile()" style="display:none;">复制全文</button>
     </div>
   </div>
 
@@ -922,6 +939,7 @@ export default {
     'panel-desktop-send-file',
     'panel-desktop-recv-code',
     'panel-mobile-send-code',
+    'panel-mobile-recv-code',
     'panel-mobile-recv-file'
   ];
 
@@ -955,6 +973,11 @@ export default {
       renderEntryQR();
       const codeInput = document.getElementById('input-code');
       if (codeInput) codeInput.focus();
+    }
+    // 切换到手机端提取码面板时聚焦输入框
+    if (tabKey === 'mobile-recv-code') {
+      const codeInputMobile = document.getElementById('input-code-mobile');
+      if (codeInputMobile) codeInputMobile.focus();
     }
   }
 
@@ -1185,6 +1208,51 @@ export default {
       preview.style.color = '#ef4444';
       preview.innerText = '提取失败：' + e.message;
     }
+  }
+
+  // 4.4 手机端：通过 6 位提取码提取文本
+  async function fetchByCodeMobile() {
+    const code = document.getElementById('input-code-mobile').value.replaceAll(' ', '').trim();
+    if (code.length !== 6 || !/^[0-9]+$/.test(code)) {
+      return alert('请输入 6 位纯数字提取码');
+    }
+
+    const preview = document.getElementById('recv-preview-mobile');
+    preview.style.color = 'var(--ink-muted)';
+    preview.innerText = '正在请求并解密...';
+
+    try {
+      const storageId = "code_" + (await sha256(code)).substring(0, 16);
+      const res = await fetch('/api/get/' + storageId);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '提取失败或已销毁');
+
+      const key = await deriveKeyFromCode(code);
+      const text = await decryptText(data.cipherText, key);
+
+      preview.style.color = 'var(--ink)';
+      preview.innerText = text;
+      updateCharCount(text.length);
+
+      const copyBtn = document.getElementById('btn-copy-retrieved-mobile');
+      copyBtn.style.display = 'inline-flex';
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.innerText = '已自动存入剪贴板';
+        setTimeout(() => { copyBtn.innerText = '复制全文'; }, 2000);
+      }).catch(() => {});
+    } catch (e) {
+      preview.style.color = '#ef4444';
+      preview.innerText = '提取失败：' + e.message;
+    }
+  }
+
+  function copyRetrievedTextMobile() {
+    const text = document.getElementById('recv-preview-mobile').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      const b = document.getElementById('btn-copy-retrieved-mobile');
+      b.innerText = '已复制全文';
+      setTimeout(() => { b.innerText = '复制全文'; }, 2000);
+    });
   }
 
   function copyRetrievedText() {
