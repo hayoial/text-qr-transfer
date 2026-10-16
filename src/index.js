@@ -95,7 +95,7 @@ export default {
       }
     }
 
-    // API: 获取文件分块 (可选清理)
+    // API: 获取文件分块
     if (url.pathname.startsWith("/api/file/chunk/") && request.method === "GET") {
       try {
         if (!env.TEXT_KV) {
@@ -109,10 +109,37 @@ export default {
         if (!cipherSlice) {
           return new Response(JSON.stringify({ error: "分块已过期或已销毁" }), { status: 404 });
         }
-        // 阅后即焚清理
-        await env.TEXT_KV.delete(key);
 
         return new Response(JSON.stringify({ cipherSlice }), {
+          headers: { "content-type": "application/json" }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // API: 删除文件元数据与分块 (阅后即焚主动清理)
+    if (url.pathname.startsWith("/api/file/") && request.method === "DELETE") {
+      try {
+        if (!env.TEXT_KV) {
+          return new Response(JSON.stringify({ error: "Storage not configured" }), { status: 500 });
+        }
+        const id = url.pathname.split("/").pop();
+        const metaStr = await env.TEXT_KV.get(id + "_meta");
+        if (metaStr) {
+          try {
+            const meta = JSON.parse(metaStr);
+            const total = meta.totalChunks || 0;
+            const deletes = [env.TEXT_KV.delete(id + "_meta")];
+            for (let i = 0; i < total; i++) {
+              deletes.push(env.TEXT_KV.delete(id + "_c_" + i));
+            }
+            await Promise.all(deletes);
+          } catch (_) {
+            await env.TEXT_KV.delete(id + "_meta");
+          }
+        }
+        return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" }
         });
       } catch (e) {
@@ -337,6 +364,7 @@ export default {
       align-items: center;
       margin-top: 14px;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .btn {
@@ -367,6 +395,24 @@ export default {
     }
 
     .btn-action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-cloud {
+      background: #0284c7;
+      color: #fff;
+      font-size: 14px;
+      padding: 10px 18px;
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .btn-cloud:hover {
+      background: #0369a1;
+    }
+
+    .btn-cloud:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
@@ -783,7 +829,7 @@ export default {
 
       <div class="control-row" style="margin-top:10px;">
         <button class="btn btn-action" id="btn-file-start" onclick="toggleFileBroadcast()">动态码循环播放</button>
-        <button class="btn btn-retrieve" id="btn-file-cloud-code" onclick="uploadFileAsEncryptedCode()">⚡ 生成 6 位提取码 (秒传 3MB+)</button>
+        <button class="btn btn-cloud" id="btn-file-cloud-code" onclick="uploadFileAsEncryptedCode()">⚡ 生成 6 位提取码 (秒传 3MB+)</button>
         <button class="btn btn-subtle" id="btn-file-cancel" onclick="cancelFileBroadcast()">取消重选</button>
       </div>
 
@@ -1255,76 +1301,189 @@ export default {
     }
   }
 
-  // 4.3 电脑端主操作：提取 6 位码对应的内容
-  async function fetchByCode() {
-    const code = document.getElementById('input-code').value.replaceAll(' ', '').trim();
+  // 4.3 统一提取逻辑：根据 6 位码智能识别大文件分块密文或纯文本密文
+  function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
+  }
+
+  function bytesToBase64(bytesOrBuffer) {
+    const bytes = (bytesOrBuffer instanceof Uint8Array) 
+      ? bytesOrBuffer 
+      : new Uint8Array(bytesOrBuffer);
+    let binary = '';
+    const len = bytes.length;
+    const chunkSize = 8192;
+    for (let i = 0; i < len; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)));
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBytes(base64) {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  async function executeFetchByCode(rawCode, previewId, copyBtnId, downloadBtnId, fetchBtnId) {
+    const code = (rawCode || '').replaceAll(' ', '').trim();
     if (code.length !== 6 || !/^[0-9]+$/.test(code)) {
       return alert('请输入 6 位纯数字提取码');
     }
 
-    const preview = document.getElementById('recv-preview');
-    preview.style.color = 'var(--ink-muted)';
-    preview.innerText = '正在请求并解密...';
+    const preview = document.getElementById(previewId);
+    const copyBtn = document.getElementById(copyBtnId);
+    const downloadBtn = document.getElementById(downloadBtnId);
+    const fetchBtn = document.getElementById(fetchBtnId);
+
+    const oldBtnText = fetchBtn ? fetchBtn.innerText : '提取内容';
+    if (fetchBtn) {
+      fetchBtn.disabled = true;
+      fetchBtn.innerText = '正在查询...';
+    }
+
+    if (preview) {
+      preview.style.color = 'var(--ink-muted)';
+      preview.innerText = '正在查询提取码并解析内容...';
+    }
+    if (copyBtn) copyBtn.style.display = 'none';
+    if (downloadBtn) {
+      downloadBtn.style.display = 'none';
+      if (downloadBtn.href && downloadBtn.href.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadBtn.href);
+        downloadBtn.removeAttribute('href');
+      }
+    }
 
     try {
       const storageId = "code_" + (await sha256(code)).substring(0, 16);
-      const res = await fetch('/api/get/' + storageId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '提取失败或已销毁');
+
+      // 1. 优先检查是否为大文件分块密文 (3MB+ 秒级直传)
+      const metaRes = await fetch('/api/file/meta/' + storageId);
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (preview) {
+          preview.innerText = '检测到文件 [' + meta.name + '] (' + formatBytes(meta.size) + ')，正在极速并发接收分块 (共 ' + meta.totalChunks + ' 块)...';
+        }
+        if (fetchBtn) fetchBtn.innerText = '拉取中...';
+
+        let receivedCount = 0;
+        const chunkPromises = [];
+        for (let i = 0; i < meta.totalChunks; i++) {
+          const p = fetch('/api/file/chunk/' + storageId + '/' + i)
+            .then(async r => {
+              if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                throw new Error(err.error || ('分块 #' + i + ' 下载失败'));
+              }
+              const d = await r.json();
+              receivedCount++;
+              if (preview) {
+                preview.innerText = '正在极速拉取分块 (' + receivedCount + '/' + meta.totalChunks + ')...';
+              }
+              return { idx: i, cipherSlice: d.cipherSlice };
+            });
+          chunkPromises.push(p);
+        }
+
+        const chunks = await Promise.all(chunkPromises);
+        chunks.sort((a, b) => a.idx - b.idx);
+
+        if (preview) preview.innerText = '分块接收完毕，正在浏览器本地端到端 AES-256 解密...';
+        if (fetchBtn) fetchBtn.innerText = '正在解密...';
+
+        // 还原密文完整字节数组
+        const chunkByteArrays = chunks.map(c => base64ToBytes(c.cipherSlice));
+        const totalLen = chunkByteArrays.reduce((acc, b) => acc + b.length, 0);
+        const fullCipher = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const b of chunkByteArrays) {
+          fullCipher.set(b, offset);
+          offset += b.length;
+        }
+
+        // 还原 IV 与解密
+        const ivBytes = base64ToBytes(meta.iv);
+        const key = await deriveKeyFromCode(code);
+        const decryptedBuffer = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: ivBytes },
+          key,
+          fullCipher.buffer
+        );
+
+        const blob = new Blob([decryptedBuffer], { type: meta.type || 'application/octet-stream' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        if (preview) {
+          preview.style.color = 'var(--ink)';
+          preview.innerHTML = '🎉 <b>文件解密成功！</b><br>' +
+            '文件名：' + escapeHtml(meta.name) + '<br>' +
+            '文件大小：' + formatBytes(blob.size) + '<br>' +
+            '传输状态：端到端 AES-256 完整性校验通过，已就绪可点击下方下载。';
+        }
+
+        if (downloadBtn) {
+          downloadBtn.href = blobUrl;
+          downloadBtn.download = meta.name;
+          downloadBtn.innerText = '📥 点击保存：' + meta.name + ' (' + formatBytes(blob.size) + ')';
+          downloadBtn.style.display = 'inline-flex';
+        }
+
+        // 后台触发服务端阅后即焚清理
+        fetch('/api/file/' + storageId, { method: 'DELETE' }).catch(() => {});
+        return;
+      }
+
+      // 2. 若不是文件，则拉取文本密文
+      const textRes = await fetch('/api/get/' + storageId);
+      const textData = await textRes.json();
+      if (!textRes.ok) {
+        throw new Error(textData.error || '提取失败：未找到有效内容或提取码已过期');
+      }
 
       const key = await deriveKeyFromCode(code);
-      const text = await decryptText(data.cipherText, key);
+      const text = await decryptText(textData.cipherText, key);
 
-      preview.style.color = 'var(--ink)';
-      preview.innerText = text;
+      if (preview) {
+        preview.style.color = 'var(--ink)';
+        preview.innerText = text;
+      }
       updateCharCount(text.length);
 
-      const copyBtn = document.getElementById('btn-copy-retrieved');
-      copyBtn.style.display = 'inline-flex';
-      navigator.clipboard.writeText(text).then(() => {
-        copyBtn.innerText = '已自动存入剪贴板';
-        setTimeout(() => { copyBtn.innerText = '复制全文'; }, 2000);
-      }).catch(() => {});
+      if (copyBtn) {
+        copyBtn.style.display = 'inline-flex';
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.innerText = '已自动存入剪贴板';
+          setTimeout(() => { copyBtn.innerText = '复制全文'; }, 2000);
+        }).catch(() => {});
+      }
     } catch (e) {
-      preview.style.color = '#ef4444';
-      preview.innerText = '提取失败：' + e.message;
+      if (preview) {
+        preview.style.color = '#ef4444';
+        preview.innerText = '提取失败：' + e.message;
+      }
+    } finally {
+      if (fetchBtn) {
+        fetchBtn.disabled = false;
+        fetchBtn.innerText = oldBtnText;
+      }
     }
   }
 
-  // 4.4 手机端：通过 6 位提取码提取文本
-  async function fetchByCodeMobile() {
-    const code = document.getElementById('input-code-mobile').value.replaceAll(' ', '').trim();
-    if (code.length !== 6 || !/^[0-9]+$/.test(code)) {
-      return alert('请输入 6 位纯数字提取码');
-    }
+  function fetchByCode() {
+    const val = document.getElementById('input-code').value;
+    executeFetchByCode(val, 'recv-preview', 'btn-copy-retrieved', 'btn-download-retrieved', 'btn-fetch-desktop');
+  }
 
-    const preview = document.getElementById('recv-preview-mobile');
-    preview.style.color = 'var(--ink-muted)';
-    preview.innerText = '正在请求并解密...';
-
-    try {
-      const storageId = "code_" + (await sha256(code)).substring(0, 16);
-      const res = await fetch('/api/get/' + storageId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '提取失败或已销毁');
-
-      const key = await deriveKeyFromCode(code);
-      const text = await decryptText(data.cipherText, key);
-
-      preview.style.color = 'var(--ink)';
-      preview.innerText = text;
-      updateCharCount(text.length);
-
-      const copyBtn = document.getElementById('btn-copy-retrieved-mobile');
-      copyBtn.style.display = 'inline-flex';
-      navigator.clipboard.writeText(text).then(() => {
-        copyBtn.innerText = '已自动存入剪贴板';
-        setTimeout(() => { copyBtn.innerText = '复制全文'; }, 2000);
-      }).catch(() => {});
-    } catch (e) {
-      preview.style.color = '#ef4444';
-      preview.innerText = '提取失败：' + e.message;
-    }
+  function fetchByCodeMobile() {
+    const val = document.getElementById('input-code-mobile').value;
+    executeFetchByCode(val, 'recv-preview-mobile', 'btn-copy-retrieved-mobile', 'btn-download-retrieved-mobile', 'btn-fetch-mobile');
   }
 
   function copyRetrievedTextMobile() {
@@ -1372,7 +1531,7 @@ export default {
   let fileBroadcastIndex = 0;
   let fileQrInstance = null;
 
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB 限制
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB 限制 (支持 3MB+ 大文件秒级分块直传)
   const CHUNK_PAYLOAD_SIZE = 700; // 紧凑协议黄金载荷：40KB 仅需 ~78 片！
 
   // 速度档位配置：fast(极速 160ms，单轮仅需 12 秒), standard(250ms), stable(350ms)
@@ -1427,7 +1586,7 @@ export default {
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE) {
-      alert('文件大小超过 5MB 限制（当前大小：' + formatBytes(file.size) + '），请选择更小的文件。');
+      alert('文件大小超过 15MB 限制（当前大小：' + formatBytes(file.size) + '），请选择更小的文件。');
       e.target.value = '';
       return;
     }
@@ -1438,6 +1597,9 @@ export default {
     fileBroadcastIndex = 0;
     fileQrInstance = null;
     selectedFile = file;
+
+    const codeCard = document.getElementById('file-code-display-card');
+    if (codeCard) codeCard.style.display = 'none';
 
     document.getElementById('file-qr-block').style.display = 'none';
     const target = document.getElementById('file-qr-target');
@@ -1570,8 +1732,111 @@ export default {
     document.getElementById('file-input').value = '';
     document.getElementById('file-meta-section').style.display = 'none';
     document.getElementById('file-qr-block').style.display = 'none';
+    const codeCard = document.getElementById('file-code-display-card');
+    if (codeCard) codeCard.style.display = 'none';
     const target = document.getElementById('file-qr-target');
     if (target) target.innerHTML = '';
+  }
+
+  // 5.1 电脑端大文件端到端加密分块上传 (基于 6 位提取码与 Worker KV 高速中转，3MB+ 秒级直达)
+  let fileCloudUploading = false;
+
+  async function uploadFileAsEncryptedCode() {
+    if (!selectedFile) {
+      const fi = document.getElementById('file-input');
+      if (fi) fi.click();
+      return;
+    }
+    if (fileCloudUploading) return;
+
+    const btn = document.getElementById('btn-file-cloud-code');
+    const oldText = btn ? btn.innerText : '⚡ 生成 6 位提取码 (秒传 3MB+)';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '正在本地 AES-256 加密...';
+    }
+    fileCloudUploading = true;
+
+    try {
+      const digits = Math.floor(100000 + Math.random() * 900000).toString();
+      const key = await deriveKeyFromCode(digits);
+      const storageId = "code_" + (await sha256(digits)).substring(0, 16);
+
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const cipherBuffer = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, arrayBuffer);
+      const cipherBytes = new Uint8Array(cipherBuffer);
+
+      // 分块大小: 1MB 二进制密文/块 (3MB 仅需 3 块，秒级直达)
+      const CHUNK_SIZE = 1024 * 1024;
+      const totalChunks = Math.ceil(cipherBytes.byteLength / CHUNK_SIZE) || 1;
+      const ivBase64 = bytesToBase64(iv);
+
+      const meta = {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type || 'application/octet-stream',
+        totalChunks: totalChunks,
+        iv: ivBase64,
+        createdAt: Date.now()
+      };
+
+      if (btn) btn.innerText = '正在极速上传 (0/' + totalChunks + ')...';
+      let finishedChunks = 0;
+
+      // 并发上传所有分块
+      const uploadPromises = [];
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, cipherBytes.byteLength);
+        const sliceBytes = cipherBytes.subarray(start, end);
+        const cipherSlice = bytesToBase64(sliceBytes);
+
+        const payload = {
+          id: storageId,
+          chunkIdx: i,
+          totalChunks: totalChunks,
+          cipherSlice: cipherSlice,
+          meta: (i === 0 ? meta : undefined)
+        };
+
+        const p = fetch('/api/file/chunk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(async r => {
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.error || ('分块 #' + (i + 1) + ' 上传失败'));
+          }
+          finishedChunks++;
+          if (btn) btn.innerText = '正在极速上传 (' + finishedChunks + '/' + totalChunks + ')...';
+        });
+
+        uploadPromises.push(p);
+      }
+
+      await Promise.all(uploadPromises);
+
+      // 成功显示提取码卡片
+      const codeCard = document.getElementById('file-code-display-card');
+      const digitVal = document.getElementById('file-digit-value');
+      const hint = document.getElementById('file-code-hint');
+      if (digitVal) digitVal.innerText = digits.slice(0, 3) + ' ' + digits.slice(3);
+      if (hint) hint.innerText = '文件 ' + selectedFile.name + ' (' + formatBytes(selectedFile.size) + ') 已端到端加密 · 手机输入即刻下载 · 5分钟后销毁';
+      if (codeCard) {
+        codeCard.style.display = 'block';
+        codeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } catch (e) {
+      alert('上传提取码生成失败: ' + e.message);
+    } finally {
+      fileCloudUploading = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.innerText = oldText;
+      }
+    }
   }
 
   // ==========================================
